@@ -1,10 +1,12 @@
 function results = ADFxLMS(params)
-    % ADFxLMS - Augmented Diffusion FxLMS算法仿真
+    % CFxLMS 集中式前馈主动噪声控制FxLMS算法
     %
     % 输入:
     %   params: 包含所有仿真参数的结构体。
     %       - params.time: 离散时间轴
     %       - params.rirManager: RIRManager对象，用于获取脉冲响应
+    %       - params.L: 控制滤波器的长度
+    %       - params.mu: LMS算法的步长
     %       - params.referenceSignal: 参考信号
     %
     % 输出:
@@ -12,113 +14,119 @@ function results = ADFxLMS(params)
     %       - results.errorSignal: 麦克风处的误差信号
     %       - results.controlSignal: 发送到扬声器的控制信号
     %       - results.W: 控制滤波器系数的历史记录
-    import acoustics.RIRManager;
     %% 1. 解包参数
     time            = params.time;
     rirManager      = params.rirManager;
     L               = params.L;
-    mu              = params.mu;
-    x               = params.referenceSignal; % 参考信号
-    
-    numPriSpks      = rirManager.PrimarySpeakers.Count;
-    numSecSpks      = rirManager.SecondarySpeakers.Count;
-    numErrMics      = rirManager.ErrorMicrophones.Count;
+    x               = params.referenceSignal;
+
+    % 从rirManager获取参数
+    keyPriSpks = keys(rirManager.PrimarySpeakers);
+    keySecSpks = keys(rirManager.SecondarySpeakers);
+    keyErrMics = keys(rirManager.ErrorMicrophones);
+
+    numPriSpks      = numEntries(rirManager.PrimarySpeakers);
+    numSecSpks      = numEntries(rirManager.SecondarySpeakers);
+    numErrMics      = numEntries(rirManager.ErrorMicrophones);
     
     nSamples = length(time);
+
     %% 2. 初始化
     max_Ls_hat = 0;
-    for i = 1:numSecSpks
-        Ls_hat = length(rirManager.getSecondaryRIR(i, 1));
+    for i = keySecSpks'
+        Ls_hat = length(rirManager.getSecondaryRIR(i, keyErrMics(1)));
         if Ls_hat > max_Ls_hat
             max_Ls_hat = Ls_hat;
         end
     end
 
-    x_taps = cell(numPriSpks);
-    for j = keys(rirManager.PrimarySpeakers)
-        x_taps{j} = zeros(max([L, length(rirManager.getPrimaryRIR(j, 1)), max_Ls_hat]), 1);
-    end
-
-    for nodeId = keys(rirManager.Nodes)
-        node = rirManager.Nodes(nodeId);
-        node.buildMatrices(L);
-        for j = node.RefMicId
-            node.x_taps{j} = x_taps{j};
-        end
-    end
-
-    xf_taps = zeros(L, numPriSpks, numSecSpks, numErrMics);
+    x_taps = zeros(max([L, max_Ls_hat]), numPriSpks);
 
     e = zeros(nSamples, numErrMics); % 误差信号
 
     y_taps = cell(numSecSpks);   % 控制信号
     for k = 1:numSecSpks
-        y_taps{k} = zeros(length(rirManager.getSecondaryRIR(k, 1)), 1);
+        y_taps{k} = zeros(length(rirManager.getSecondaryRIR(keySecSpks(k), keyErrMics(1))), 1);
     end
 
     d = zeros(nSamples, numErrMics); % 期望信号
+    for m = 1:numErrMics
+        for j = 1:numPriSpks
+            P = rirManager.getPrimaryRIR(keyPriSpks(j), keyErrMics(m));
+            d_jm = conv(x(:, j), P);
+            d(:, m) = d(:, m) + d_jm(1:nSamples);
+        end
+    end
+
+    for keyNode = keys(rirManager.Nodes)'
+        node = rirManager.Nodes(keyNode);
+        node.init(L);
+    end
 
     %% 3. 主循环
-    disp('开始集中式FxLMS仿真...');
+    disp('开始ADFxLMS仿真...');
     for n = 1:nSamples
-        % 3.1. 更新参考信号状态向量
-        for j = 1:numPriSpks
-            x_taps{j} = [x(n, j); x_taps{j}(1:end-1)];
+        % 3.1. 更新参考信号状态向量 (全局)
+        x_taps = [x(n, :); x_taps(1:end-1, :)];
+
+        % 3.2. 生成控制信号 y(n) (分布式)
+        for keyNode = keys(rirManager.Nodes)'
+            node = rirManager.Nodes(keyNode);
+            y = node.Phi(:, node.NeighborIds == node.Id)' * x_taps(1:L, keyPriSpks == node.RefMicId);
+            y_taps{keySecSpks == node.SecSpkId} = [y; y_taps{keySecSpks == node.SecSpkId}(1:end-1)];
         end
 
-        % 3.2. 生成控制信号 y(n)
-        for k = 1:numSecSpks
-            y = 0;
-            for j = 1:numPriSpks
-                y = y + W(:, j, k)' * x_taps{j}(1:L);
-            end
-            y_taps{k} = [y; y_taps{k}(1:end-1)];
-        end
-
-        % 3.3. 计算误差信号 e(n)
+        % 3.3. 计算误差信号 e(n) (全局)
         for m = 1:numErrMics
-            d(n, m) = 0;
-            for j = 1:numPriSpks
-                P = rirManager.getPrimaryRIR(j, m);
-                Lp = length(P);
-                d(n, m) = d(n, m) + P' * x_taps{j}(1:Lp);
-            end
-
             yf = 0;
             for k = 1:numSecSpks
-                S = rirManager.getSecondaryRIR(k, m);
+                S = rirManager.getSecondaryRIR(keySecSpks(k), keyErrMics(m));
                 Ls = length(S);
-                yf = yf + S' * y_taps{k}(1:Ls);
+                yf = yf + S * y_taps{k}(1:Ls);
             end
             e(n, m) = d(n, m) + yf;
         end
 
-        % 3.4. 滤波参考信号 x_filtered(n)
-        xf = zeros(1, numPriSpks, numSecSpks, numErrMics);
-        for k = 1:numSecSpks
-            for m = 1:numErrMics
-                S = rirManager.getSecondaryRIR(k, m);
-                Ls_hat = length(S);
-                for j = 1:numPriSpks
-                    xf(1, j, k, m) = x_taps{j}(1:Ls_hat)' * S;
-                end
+        % 3.4. 更新滤波器系数 W(n+1) (分布式)
+        % 3.4.1 滤波参考信号 x_filtered(n)
+        for keyNode = keys(rirManager.Nodes)'
+            node = rirManager.Nodes(keyNode);
+            xf = zeros(1, numel(node.NeighborIds));
+            for idx = 1:numel(node.NeighborIds)
+                neighbor = rirManager.Nodes(node.NeighborIds(idx));
+                S_hat = rirManager.getSecondaryRIR(neighbor.SecSpkId, node.ErrMicId);
+                Ls_hat = length(S_hat);
+                xf(1, idx) = S_hat * x_taps(1:Ls_hat, keyPriSpks == node.RefMicId);
             end
+            node.xf_taps = [xf; node.xf_taps(1:end-1, :)];
         end
-        xf_taps = [xf; xf_taps(1:end-1, :, :, :)];
-
-        % 3.5. 更新滤波器系数 W(n+1)
-        for k = 1:numSecSpks
-            for m = 1:numErrMics
-                W(:, :, k) = W(:, :, k) - mu * squeeze(xf_taps(:, :, k, m)) * e(n, m);
+        % 3.4.2 更新Psi      
+        for keyNode = keys(rirManager.Nodes)'
+            node = rirManager.Nodes(keyNode);
+            node.Psi = node.Phi - node.StepSize * e(n, keyErrMics == node.ErrMicId) * node.xf_taps;
+        end
+        % 3.4.3 更新Phi
+        for keyNode = keys(rirManager.Nodes)'
+            node = rirManager.Nodes(keyNode);
+            node.Phi = zeros(L, numel(node.NeighborIds));
+            for idx = 1:numel(node.NeighborIds)
+                neighborId = node.NeighborIds(idx);
+                neighbor = rirManager.Nodes(neighborId);
+                comNeighborIds = intersect(node.NeighborIds, neighbor.NeighborIds);
+                if(n == 1)
+                    disp(keyNode + "'neighbor " + neighborId + " has " + numel(comNeighborIds) + " neighbor(s).");
+                end
+                for comNeighborId = comNeighborIds
+                    comNeighbor = rirManager.Nodes(comNeighborId);
+                    node.Phi(:, idx) = node.Phi(:, idx) + comNeighbor.Psi(:, comNeighbor.NeighborIds == neighborId) / numel(comNeighborIds);
+                end
             end
         end
     end
     disp('仿真结束。');
 
     %% 4. 打包结果
-    results.description   = 'Centralized FxLMS Algorithm';
+    results.description   = 'Augmented Diffusion FxLMS Algorithm';
     results.errorSignal   = e;
     results.desiredSignal = d;
-    results.W             = W;
-
 end

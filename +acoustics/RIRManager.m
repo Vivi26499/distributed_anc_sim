@@ -26,10 +26,11 @@ classdef RIRManager < handle
         PrimarySpeakers   dictionary
         SecondarySpeakers dictionary
         ErrorMicrophones  dictionary
+
         Nodes             dictionary
     end
 
-    properties 
+    properties (Access = private)
         PrimaryRIRs   dictionary
         SecondaryRIRs dictionary
     end
@@ -43,8 +44,6 @@ classdef RIRManager < handle
 
             obj.PrimaryRIRs       = configureDictionary("string", "cell");
             obj.SecondaryRIRs     = configureDictionary("string", "cell");
-
-            obj.Nodes             = configureDictionary("uint32","algorithms.Node");
         end
 
         function addPrimarySpeaker(obj, id, position)
@@ -74,26 +73,53 @@ classdef RIRManager < handle
             obj.ErrorMicrophones(id) = {position};
         end
 
-
         function addNode(obj, node)
             obj.Nodes(node.Id) = node;
+        end
+
+        function addRefMicToNode(obj, nodeId, micId)
+            node = obj.Nodes(nodeId);
+            if ~isKey(obj.PrimarySpeakers, micId)
+                error('Reference microphone with ID %d does not exist.', id);
+            end
+            node.RefMicId = micId;
+        end
+
+        function addSecSpkToNode(obj, nodeId, spkId)
+            node = obj.Nodes(nodeId);
+            if ~isKey(obj.SecondarySpeakers, spkId)
+                error('Secondary speaker with ID %d does not exist.', id);
+            end
+            node.SecSpkId = spkId;
+        end
+
+        function addErrMicToNode(obj, nodeId, micId)
+            node = obj.Nodes(nodeId);
+            if ~isKey(obj.ErrorMicrophones, micId)
+                error('Error microphone with ID %d does not exist.', id);
+            end
+            node.ErrMicId = micId;
+        end
+
+        function connectNodes(obj, node1Id, node2Id)
+            node1 = obj.Nodes(node1Id);
+            node2 = obj.Nodes(node2Id);
+            node1.NeighborIds = union(node1.NeighborIds, node2Id);
+            node2.NeighborIds = union(node2.NeighborIds, node1Id);
         end
         
         function build(obj, verbose)
             if nargin < 2, verbose = true; end
             
-            numPriSpk = numEntries(obj.PrimarySpeakers);
-            numSecSpk = numEntries(obj.SecondarySpeakers);
-            numErrMic = numEntries(obj.ErrorMicrophones);
-            if numErrMic == 0
+            if numEntries(obj.ErrorMicrophones) == 0
                 error('No error microphones have been added.');
             end
 
             micIds = keys(obj.ErrorMicrophones);
             micPositions = cell2mat(values(obj.ErrorMicrophones));
             % --- 1. 主通路 ---
-            if numPriSpk > 0
-                for spkId = keys(obj.PrimarySpeakers)
+            if numEntries(obj.PrimarySpeakers) > 0
+                for spkId = keys(obj.PrimarySpeakers)'
                     spkPos = obj.PrimarySpeakers(spkId);
                     ir = obj.computeRIR(spkPos, micPositions);
                     
@@ -110,8 +136,8 @@ classdef RIRManager < handle
                 error('No primary speakers have been added.');
             end
             % --- 2. 次级通路 ---
-            if numSecSpk > 0
-                for spkId = keys(obj.SecondarySpeakers)
+            if numEntries(obj.SecondarySpeakers) > 0
+                for spkId = keys(obj.SecondarySpeakers)'
                     spkPos = obj.SecondarySpeakers(spkId);
                     ir = obj.computeRIR(spkPos, micPositions);
                     

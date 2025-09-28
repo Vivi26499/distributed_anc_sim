@@ -65,51 +65,51 @@ classdef RIRManager < handle
         function build(obj, verbose)
             if nargin < 2, verbose = true; end
 
-            if obj.PrimarySpeakers.Count == 0 && obj.SecondarySpeakers.Count == 0
-                error('No speakers have been added.');
-            end
             if obj.ErrorMicrophones.Count == 0
                 error('No error microphones have been added.');
             end
 
-            % 获取并排序麦克风ID和位置
-            micIds = sort(cell2mat(obj.ErrorMicrophones.keys));
-            micPositions = cell2mat(values(obj.ErrorMicrophones, num2cell(micIds))');
+            micIds = obj.ErrorMicrophones.keys;
+            micPositions = cell2mat(values(obj.ErrorMicrophones, micIds'));
 
             % --- 1. 计算主通路 (所有主扬声器 -> 所有误差麦克风) ---
             if obj.PrimarySpeakers.Count > 0
-                priSpkIds = sort(cell2mat(obj.PrimarySpeakers.keys));
+                priSpkIds = obj.PrimarySpeakers.keys;
                 for i = 1:length(priSpkIds)
-                    spkId = priSpkIds(i);
+                    spkId = priSpkIds{i};
                     spkPos = obj.PrimarySpeakers(spkId);
                     
                     ir = obj.computeRIR(spkPos, micPositions);
                     
                     for j = 1:length(micIds)
-                        micId = micIds(j);
+                        micId = micIds{j};
                         key = sprintf('P%d->M%d', spkId, micId);
                         obj.PrimaryRIRs(key) = ir(j, :);
                     end
                     if verbose, fprintf('Primary paths for Speaker P%d computed. RIR length: %d\n', spkId, size(ir, 2)); end
                 end
+            else
+                error('No primary speakers have been added.');
             end
 
             % --- 2. 计算次级通路 (所有次级扬声器 -> 所有误差麦克风) ---
             if obj.SecondarySpeakers.Count > 0
-                secSpkIds = sort(cell2mat(obj.SecondarySpeakers.keys));
+                secSpkIds = obj.SecondarySpeakers.keys;
                 for i = 1:length(secSpkIds)
-                    spkId = secSpkIds(i);
+                    spkId = secSpkIds{i};
                     spkPos = obj.SecondarySpeakers(spkId);
                     
                     ir = obj.computeRIR(spkPos, micPositions);
                     
                     for j = 1:length(micIds)
-                        micId = micIds(j);
+                        micId = micIds{j};
                         key = sprintf('S%d->M%d', spkId, micId);
                         obj.SecondaryRIRs(key) = ir(j, :);
                     end
                     if verbose, fprintf('Secondary paths for Speaker S%d computed. RIR length: %d\n', spkId, size(ir, 2)); end
                 end
+            else
+                error('No secondary speakers have been added.');
             end
         end
 
