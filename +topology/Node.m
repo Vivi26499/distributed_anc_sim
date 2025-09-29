@@ -17,6 +17,18 @@ classdef Node < handle
             end
         end
 
+        function addRefMic(obj, micId)
+            obj.RefMicId = micId;
+        end
+
+        function addSecSpk(obj, spkId)
+            obj.SecSpkId = spkId;
+        end
+
+        function addErrMic(obj, micId)
+            obj.ErrMicId = micId;
+        end
+        
         function numNeighbors = init(obj, filterlength)
             numNeighbors = numel(obj.NeighborIds);
             if nargin < 2

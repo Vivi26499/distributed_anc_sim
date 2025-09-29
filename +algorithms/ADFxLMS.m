@@ -5,6 +5,7 @@ function results = ADFxLMS(params)
     %   params: 包含所有仿真参数的结构体。
     %       - params.time: 离散时间轴
     %       - params.rirManager: RIRManager对象，用于获取脉冲响应
+    %       - params.network: 通讯网络拓扑结构
     %       - params.L: 控制滤波器的长度
     %       - params.mu: LMS算法的步长
     %       - params.referenceSignal: 参考信号
@@ -17,6 +18,7 @@ function results = ADFxLMS(params)
     %% 1. 解包参数
     time            = params.time;
     rirManager      = params.rirManager;
+    network         = params.network;
     L               = params.L;
     x               = params.referenceSignal;
 
@@ -58,8 +60,8 @@ function results = ADFxLMS(params)
         end
     end
 
-    for keyNode = keys(rirManager.Nodes)'
-        node = rirManager.Nodes(keyNode);
+    for keyNode = keys(network.Nodes)'
+        node = network.Nodes(keyNode);
         node.init(L);
     end
 
@@ -70,8 +72,8 @@ function results = ADFxLMS(params)
         x_taps = [x(n, :); x_taps(1:end-1, :)];
 
         % 3.2. 生成控制信号 y(n) (分布式)
-        for keyNode = keys(rirManager.Nodes)'
-            node = rirManager.Nodes(keyNode);
+        for keyNode = keys(network.Nodes)'
+            node = network.Nodes(keyNode);
             y = node.Phi(:, node.NeighborIds == node.Id)' * x_taps(1:L, keyPriSpks == node.RefMicId);
             y_taps{keySecSpks == node.SecSpkId} = [y; y_taps{keySecSpks == node.SecSpkId}(1:end-1)];
         end
@@ -89,11 +91,11 @@ function results = ADFxLMS(params)
 
         % 3.4. 更新滤波器系数 W(n+1) (分布式)
         % 3.4.1 滤波参考信号 x_filtered(n)
-        for keyNode = keys(rirManager.Nodes)'
-            node = rirManager.Nodes(keyNode);
+        for keyNode = keys(network.Nodes)'
+            node = network.Nodes(keyNode);
             xf = zeros(1, numel(node.NeighborIds));
             for idx = 1:numel(node.NeighborIds)
-                neighbor = rirManager.Nodes(node.NeighborIds(idx));
+                neighbor = network.Nodes(node.NeighborIds(idx));
                 S_hat = rirManager.getSecondaryRIR(neighbor.SecSpkId, node.ErrMicId);
                 Ls_hat = length(S_hat);
                 xf(1, idx) = S_hat * x_taps(1:Ls_hat, keyPriSpks == node.RefMicId);
@@ -101,23 +103,20 @@ function results = ADFxLMS(params)
             node.xf_taps = [xf; node.xf_taps(1:end-1, :)];
         end
         % 3.4.2 更新Psi      
-        for keyNode = keys(rirManager.Nodes)'
-            node = rirManager.Nodes(keyNode);
+        for keyNode = keys(network.Nodes)'
+            node = network.Nodes(keyNode);
             node.Psi = node.Phi - node.StepSize * e(n, keyErrMics == node.ErrMicId) * node.xf_taps;
         end
         % 3.4.3 更新Phi
-        for keyNode = keys(rirManager.Nodes)'
-            node = rirManager.Nodes(keyNode);
+        for keyNode = keys(network.Nodes)'
+            node = network.Nodes(keyNode);
             node.Phi = zeros(L, numel(node.NeighborIds));
             for idx = 1:numel(node.NeighborIds)
                 neighborId = node.NeighborIds(idx);
-                neighbor = rirManager.Nodes(neighborId);
+                neighbor = network.Nodes(neighborId);
                 comNeighborIds = intersect(node.NeighborIds, neighbor.NeighborIds);
-                if(n == 1)
-                    disp(keyNode + "'neighbor " + neighborId + " has " + numel(comNeighborIds) + " neighbor(s).");
-                end
                 for comNeighborId = comNeighborIds
-                    comNeighbor = rirManager.Nodes(comNeighborId);
+                    comNeighbor = network.Nodes(comNeighborId);
                     node.Phi(:, idx) = node.Phi(:, idx) + comNeighbor.Psi(:, comNeighbor.NeighborIds == neighborId) / numel(comNeighborIds);
                 end
             end

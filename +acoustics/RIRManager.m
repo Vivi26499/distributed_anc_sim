@@ -26,8 +26,6 @@ classdef RIRManager < handle
         PrimarySpeakers   dictionary
         SecondarySpeakers dictionary
         ErrorMicrophones  dictionary
-
-        Nodes             dictionary
     end
 
     properties (Access = private)
@@ -71,41 +69,6 @@ classdef RIRManager < handle
                 position (1,3) double
             end
             obj.ErrorMicrophones(id) = {position};
-        end
-
-        function addNode(obj, node)
-            obj.Nodes(node.Id) = node;
-        end
-
-        function addRefMicToNode(obj, nodeId, micId)
-            node = obj.Nodes(nodeId);
-            if ~isKey(obj.PrimarySpeakers, micId)
-                error('Reference microphone with ID %d does not exist.', id);
-            end
-            node.RefMicId = micId;
-        end
-
-        function addSecSpkToNode(obj, nodeId, spkId)
-            node = obj.Nodes(nodeId);
-            if ~isKey(obj.SecondarySpeakers, spkId)
-                error('Secondary speaker with ID %d does not exist.', id);
-            end
-            node.SecSpkId = spkId;
-        end
-
-        function addErrMicToNode(obj, nodeId, micId)
-            node = obj.Nodes(nodeId);
-            if ~isKey(obj.ErrorMicrophones, micId)
-                error('Error microphone with ID %d does not exist.', id);
-            end
-            node.ErrMicId = micId;
-        end
-
-        function connectNodes(obj, node1Id, node2Id)
-            node1 = obj.Nodes(node1Id);
-            node2 = obj.Nodes(node2Id);
-            node1.NeighborIds = union(node1.NeighborIds, node2Id);
-            node2.NeighborIds = union(node2.NeighborIds, node1Id);
         end
         
         function build(obj, verbose)
