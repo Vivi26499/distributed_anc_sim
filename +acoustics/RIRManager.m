@@ -133,6 +133,23 @@ classdef RIRManager < handle
             end
             h = cell2mat(obj.SecondaryRIRs(key));
         end
+        
+        function d = calculateDesiredSignal(obj, referenceSignal, nSamples)
+            keyPriSpks = keys(obj.PrimarySpeakers);
+            keyErrMics = keys(obj.ErrorMicrophones);
+            numPriSpks = numEntries(obj.PrimarySpeakers);
+            numErrMics = numEntries(obj.ErrorMicrophones);
+            x = referenceSignal;
+        
+            d = zeros(nSamples, numErrMics); % 期望信号
+            for m = 1:numErrMics
+                for j = 1:numPriSpks
+                    P = obj.getPrimaryRIR(keyPriSpks(j), keyErrMics(m));
+                    d_jm = conv(x(:, j), P);
+                    d(:, m) = d(:, m) + d_jm(1:nSamples);
+                end
+            end
+        end
     end
 
     methods (Access = private)

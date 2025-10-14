@@ -1,5 +1,5 @@
-function results = ADFxLMS(params)
-    % ADFxLMS 分布式主动噪声控制FxLMS算法
+function results = ADFxLMS_BC(params)
+    % ADFxLMS-BC 分布式主动噪声控制FxLMS算法
     %
     % 输入:
     %   params: 包含所有仿真参数的结构体。
@@ -58,7 +58,7 @@ function results = ADFxLMS(params)
     end
 
     %% 3. 主循环
-    disp('开始ADFxLMS仿真...');
+    disp('开始ADFxLMS-BC仿真...');
     for n = 1:nSamples
         % 3.1. 更新参考信号状态向量 (全局)
         x_taps = [x(n, :); x_taps(1:end-1, :)];
@@ -99,18 +99,21 @@ function results = ADFxLMS(params)
             node = network.Nodes(keyNode);
             node.Psi = node.Phi - node.StepSize * e(n, keyErrMics == node.ErrMicId) * node.xf_taps;
         end
-        % 3.4.3 更新Phi
+        % 3.4.3 更新本地滤波器参数
         for keyNode = keys(network.Nodes)'
             node = network.Nodes(keyNode);
-            node.Phi = zeros(L, numel(node.NeighborIds));
-            for idx = 1:numel(node.NeighborIds)
-                neighborId = node.NeighborIds(idx);
+            node.Phi(:, node.NeighborIds == node.Id) = zeros(L, 1);
+            for neighborId = node.NeighborIds
                 neighbor = network.Nodes(neighborId);
-                comNeighborIds = intersect(node.NeighborIds, neighbor.NeighborIds);
-                for comNeighborId = comNeighborIds
-                    comNeighbor = network.Nodes(comNeighborId);
-                    node.Phi(:, idx) = node.Phi(:, idx) + comNeighbor.Psi(:, comNeighbor.NeighborIds == neighborId) / numel(comNeighborIds);
-                end
+                node.Phi(:, node.NeighborIds == node.Id) = node.Phi(:, node.NeighborIds == node.Id) + neighbor.Psi(:, neighbor.NeighborIds == node.Id) / numel(node.NeighborIds);
+            end
+        end       
+        % 3.4.4 更新Phi
+        for keyNode = keys(network.Nodes)'
+            node = network.Nodes(keyNode);
+            for neighborId = node.NeighborIds
+                neighbor = network.Nodes(neighborId);
+                node.Phi(:, node.NeighborIds == neighborId) = neighbor.Phi(:, neighbor.NeighborIds == neighborId);
             end
         end
     end

@@ -8,6 +8,7 @@ function results = CFxLMS(params)
     %       - params.L: 控制滤波器的长度
     %       - params.mu: LMS算法的步长
     %       - params.referenceSignal: 参考信号
+    %       - params.desiredSignal: 期望信号
     %
     % 输出:
     %   results: 包含仿真结果的结构体。
@@ -20,6 +21,7 @@ function results = CFxLMS(params)
     L               = params.L;
     mu              = params.mu;
     x               = params.referenceSignal; % 参考信号
+    d               = params.desiredSignal;   % 期望信号
 
     % 从rirManager获取参数
     keyPriSpks = keys(rirManager.PrimarySpeakers);
@@ -51,15 +53,6 @@ function results = CFxLMS(params)
     y_taps = cell(numSecSpks);   % 控制信号
     for k = 1:numSecSpks
         y_taps{k} = zeros(length(rirManager.getSecondaryRIR(keySecSpks(k), keyErrMics(1))), 1);
-    end
-
-    d = zeros(nSamples, numErrMics); % 期望信号
-    for m = 1:numErrMics
-        for j = 1:numPriSpks
-            P = rirManager.getPrimaryRIR(keyPriSpks(j), keyErrMics(m));
-            d_jm = conv(x(:, j), P);
-            d(:, m) = d(:, m) + d_jm(1:nSamples);
-        end
     end
 
     %% 3. 主循环
@@ -109,11 +102,8 @@ function results = CFxLMS(params)
             end
         end
     end
-    disp('仿真结束。');
 
     %% 4. 打包结果
     results.description   = 'Centralized FxLMS Algorithm';
     results.errorSignal   = e;
-    results.desiredSignal = d;
-    results.W             = W;
 end
