@@ -12,9 +12,8 @@ function results = ADFxLMS(params)
     %
     % 输出:
     %   results: 包含仿真结果的结构体。
-    %       - results.errorSignal: 麦克风处的误差信号
-    %       - results.controlSignal: 发送到扬声器的控制信号
-    %       - results.W: 控制滤波器系数的历史记录
+    %       - results.err_hist: 麦克风处的误差信号历史
+    %       - results.filter_coeffs: 各节点最终的控制器滤波器系数
     %% 1. 解包参数
     time            = params.time;
     rirManager      = params.rirManager;
@@ -116,6 +115,12 @@ function results = ADFxLMS(params)
     end
 
     %% 4. 打包结果
-    results.description   = 'Augmented Diffusion FxLMS Algorithm';
-    results.errorSignal   = e;
+    filter_coeffs = dictionary;
+    for keyNode = keys(network.Nodes)'
+        node = network.Nodes(keyNode);
+        w = node.Phi(:, node.NeighborIds == node.Id);
+        filter_coeffs(node.SecSpkId) = {w};
+    end
+    results.err_hist      = e;
+    results.filter_coeffs = filter_coeffs;
 end

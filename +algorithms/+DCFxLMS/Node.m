@@ -1,8 +1,7 @@
 classdef Node < topology.Node
     properties
         StepSize     (1,1) double {mustBePositive} = 0.01;
-        Phi double = [];
-        Psi double = [];
+        W (:, 1) double = [];
 
         xf_taps double = [];
     end
@@ -15,15 +14,10 @@ classdef Node < topology.Node
             end
         end
 
-        % 生成 Psi 和 Phi，全零矩阵
+        % 生成 W 和 Psi，全零向量
         function init(obj, filterlength)
-            numNeighbors = numel(obj.NeighborIds);
-            if nargin < 2
-                filterlength = 64; % 默认滤波器长度
-            end
-            obj.Phi = zeros(filterlength, numNeighbors);
-            obj.Psi = obj.Phi;
-            obj.xf_taps = obj.Phi;
+            obj.W = zeros(filterlength, 1);
+            obj.xf_taps = obj.W;
         end
     end
 end

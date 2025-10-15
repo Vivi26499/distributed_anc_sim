@@ -12,9 +12,8 @@ function results = CFxLMS(params)
     %
     % 输出:
     %   results: 包含仿真结果的结构体。
-    %       - results.errorSignal: 麦克风处的误差信号
-    %       - results.controlSignal: 发送到扬声器的控制信号
-    %       - results.W: 控制滤波器系数的历史记录
+    %       - results.err_hist: 麦克风处的误差信号历史
+    %       - results.filter_coeffs: 各节点最终的控制器滤波器系数
     %% 1. 解包参数
     time            = params.time;
     rirManager      = params.rirManager;
@@ -63,10 +62,7 @@ function results = CFxLMS(params)
 
         % 3.2. 生成控制信号 y(n)
         for k = 1:numSecSpks
-            y = 0;
-            for j = 1:numPriSpks
-                y = y + W(:, j, k)' * x_taps(1:L, j);
-            end
+            y = sum(W(:, :, k) .* x_taps(1:L, :), 'all');
             y_taps{k} = [y; y_taps{k}(1:end-1)];
         end
 
@@ -87,9 +83,7 @@ function results = CFxLMS(params)
             for m = 1:numErrMics
                 S = rirManager.getSecondaryRIR(keySecSpks(k), keyErrMics(m));
                 Ls_hat = length(S);
-                for j = 1:numPriSpks
-                    xf(1, j, k, m) = S * x_taps(1:Ls_hat, j);
-                end
+                xf(1, :, k, m) = S * x_taps(1:Ls_hat, :);
             end
         end
         
@@ -104,6 +98,10 @@ function results = CFxLMS(params)
     end
 
     %% 4. 打包结果
-    results.description   = 'Centralized FxLMS Algorithm';
-    results.errorSignal   = e;
+    filter_coeffs = dictionary;
+    for k = 1:numSecSpks
+        filter_coeffs(keySecSpks(k)) = {squeeze(W(:, :, k))};
+    end
+    results.err_hist = e;
+    results.filter_coeffs = filter_coeffs;
 end

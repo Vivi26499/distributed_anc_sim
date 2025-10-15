@@ -27,9 +27,9 @@
 ├── +utils/
 │   └── wn_gen.m          # 带限白噪声生成工具
 └── +viz/
-    ├── plot_comparison.m # 性能对比绘图工具
+    ├── plotResults.m     # 性能对比绘图工具
     ├── plot_rir.m        # RIR 绘图工具
-    └── plot_signals.m    # 信号对比绘图工具
+    └── plotTapWeights.m  # 滤波器系数绘图工具
 ```
 
 ## 依赖项
@@ -51,9 +51,11 @@
 
 ## 支持的算法
 
-- **集中式 FxLMS (CFxLMS)**: 一个传统的集中式 ANC 实现，作为基准。所有节点的控制滤波器更新都依赖于全局的误差信号，需要一个中心控制器。
-- **[增广扩散 FxLMS (ADFxLMS)](https://ieeexplore.ieee.org/abstract/document/10080983)**
-- **[双向增广扩散 FxLMS (ADFxLMS)](https://doi.org/10.1121/10.0022573)**
+- **集中式 FxLMS (CFxLMS)**: 一个传统的集中式 ANC 实现，作为性能基准。
+- **去中心化 FxLMS (DCFxLMS)**: 各节点独立运行标准的 FxLMS 算法，节点间无任何通信，计算复杂度低，但易发散。
+- **[扩散 FxLMS (Diff-FxLMS)](https://doi.org/10.1109/ICASSP39728.2021.9414609)**
+- **[增广扩散 FxLMS (ADFxLMS)](https://doi.org/10.1109/TASLP.2023.3261742)**
+- **[双向传播增广扩散 FxLMS (ADFxLMS-BC)](https://doi.org/10.1121/10.0022573)**
 
 ## 核心组件详解
 
@@ -79,7 +81,8 @@
 ### `viz` 包
 
 `viz` 包提供了一系列可视化工具，用于分析仿真结果：
-- `plotResults`: 绘制单个通道的期望信号和多个算法的误差信号进行时域和频域对比。
+- `plotResults`: 绘制单个通道的期望信号和多个算法的误差信号，进行时域和频域对比。
+- `plotTapWeights`: 绘制并比较不同算法最终得到的控制器滤波器系数。
 - `plot_rir`: 用于可视化生成的房间冲激响应。
 
 ## 自定义仿真
@@ -93,6 +96,6 @@
 
 ## To-Do
 1. 修复主噪声源和参考麦克风命名混用的问题，对当前的理想参考信号模式通过显式的方式完成
-2. 节点Id多处使用`dictionary`的`key`，变量中`key`和`id`也有类似混用问题，需要统一
+2. 节点Id多处使用`dictionary`的`key`，变量名中`key`和`id`也有类似混用问题，需要统一
 3. 多处计算使用`for`循环实现，可以考虑构造矩阵进行矩阵计算以加速仿真
 4. `topology.node`目前只支持连接一个参考麦克风、一个次级扬声器、一个误差麦克风，未来需要扩展以支持连接多个元件

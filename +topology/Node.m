@@ -6,7 +6,6 @@ classdef Node < handle
         ErrMicId (1,1) uint32   % 误差麦克风 ID
         NeighborIds (1,:) uint32     % 存储邻居节点 ID
 
-        xf_taps
     end
 
     methods
@@ -27,14 +26,6 @@ classdef Node < handle
 
         function addErrMic(obj, micId)
             obj.ErrMicId = micId;
-        end
-        
-        function numNeighbors = init(obj, filterlength)
-            numNeighbors = numel(obj.NeighborIds);
-            if nargin < 2
-                filterlength = 64; % 默认滤波器长度
-            end
-            obj.xf_taps = zeros(filterlength, numNeighbors);
         end
     end
 end

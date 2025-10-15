@@ -1,5 +1,5 @@
-function results = ADFxLMS_BC(params)
-    % ADFxLMS-BC 分布式主动噪声控制FxLMS算法
+function results = DCFxLMS(params)
+    % ADFxLMS 分布式主动噪声控制FxLMS算法
     %
     % 输入:
     %   params: 包含所有仿真参数的结构体。
@@ -57,7 +57,7 @@ function results = ADFxLMS_BC(params)
     end
 
     %% 3. 主循环
-    disp('开始ADFxLMS-BC仿真...');
+    disp('开始DCFxLMS仿真...');
     for n = 1:nSamples
         % 3.1. 更新参考信号状态向量 (全局)
         x_taps = [x(n, :); x_taps(1:end-1, :)];
@@ -65,7 +65,7 @@ function results = ADFxLMS_BC(params)
         % 3.2. 生成控制信号 y(n) (分布式)
         for keyNode = keys(network.Nodes)'
             node = network.Nodes(keyNode);
-            y = node.Phi(:, node.NeighborIds == node.Id)' * x_taps(1:L, keyPriSpks == node.RefMicId);
+            y = node.W' * x_taps(1:L, keyPriSpks == node.RefMicId);
             y_taps{keySecSpks == node.SecSpkId} = [y; y_taps{keySecSpks == node.SecSpkId}(1:end-1)];
         end
 
@@ -84,36 +84,15 @@ function results = ADFxLMS_BC(params)
         % 3.4.1 滤波参考信号 x_filtered(n)
         for keyNode = keys(network.Nodes)'
             node = network.Nodes(keyNode);
-            xf = zeros(1, numel(node.NeighborIds));
-            for idx = 1:numel(node.NeighborIds)
-                neighbor = network.Nodes(node.NeighborIds(idx));
-                S_hat = rirManager.getSecondaryRIR(neighbor.SecSpkId, node.ErrMicId);
-                Ls_hat = length(S_hat);
-                xf(1, idx) = S_hat * x_taps(1:Ls_hat, keyPriSpks == node.RefMicId);
-            end
-            node.xf_taps = [xf; node.xf_taps(1:end-1, :)];
+            S_hat = rirManager.getSecondaryRIR(node.SecSpkId, node.ErrMicId);
+            Ls_hat = length(S_hat);
+            xf = S_hat * x_taps(1:Ls_hat, keyPriSpks == node.RefMicId);
+            node.xf_taps = [xf; node.xf_taps(1:end-1)];
         end
-        % 3.4.2 更新Psi      
+        % 3.4.2 更新W    
         for keyNode = keys(network.Nodes)'
             node = network.Nodes(keyNode);
-            node.Psi = node.Phi - node.StepSize * e(n, keyErrMics == node.ErrMicId) * node.xf_taps;
-        end
-        % 3.4.3 更新本地滤波器参数
-        for keyNode = keys(network.Nodes)'
-            node = network.Nodes(keyNode);
-            node.Phi(:, node.NeighborIds == node.Id) = zeros(L, 1);
-            for neighborId = node.NeighborIds
-                neighbor = network.Nodes(neighborId);
-                node.Phi(:, node.NeighborIds == node.Id) = node.Phi(:, node.NeighborIds == node.Id) + neighbor.Psi(:, neighbor.NeighborIds == node.Id) / numel(node.NeighborIds);
-            end
-        end       
-        % 3.4.4 更新Phi
-        for keyNode = keys(network.Nodes)'
-            node = network.Nodes(keyNode);
-            for neighborId = node.NeighborIds
-                neighbor = network.Nodes(neighborId);
-                node.Phi(:, node.NeighborIds == neighborId) = neighbor.Phi(:, neighbor.NeighborIds == neighborId);
-            end
+            node.W = node.W - node.StepSize * e(n, keyErrMics == node.ErrMicId) * node.xf_taps;
         end
     end
 
@@ -121,7 +100,7 @@ function results = ADFxLMS_BC(params)
     filter_coeffs = dictionary;
     for keyNode = keys(network.Nodes)'
         node = network.Nodes(keyNode);
-        w = node.Phi(:, node.NeighborIds == node.Id);
+        w = node.W;
         filter_coeffs(node.SecSpkId) = {w};
     end
     results.err_hist      = e;
