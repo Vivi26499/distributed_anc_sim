@@ -11,6 +11,7 @@ mgr.MaterialScattering = 0.07;
 
 center = mgr.Room / 2;
 % 主扬声器
+% 程序暂时不能兼容多个主扬声器
 mgr.addPrimarySpeaker(101, center + [1 0 0]);
 
 % 次扬声器
@@ -264,3 +265,72 @@ for ch = 1:numCh
     error_signals_ch = cellfun(@(x) x(:, ch), error_signals, 'UniformOutput', false);
     viz.plotResults(time, d(:, ch), error_signals_ch, alg_names, micIDs(ch), mgr.Fs);
 end
+
+%% --- 新增：仿照论文格式绘制 NSE (dB) 对比图 ---
+fprintf('正在绘制 NSE 对比图...\n');
+
+% 1. 配置绘图数据
+% 将所有结果放入元胞数组，方便循环
+all_results = {results_cf, results_adf, results_adf_bc, results_diff, results_dcf};
+alg_legends = {'CFxLMS', 'ADFxLMS', 'ADFxLMS-BC', 'Diff-FxLMS', 'DCFxLMS'};
+line_styles = {'-', '-', '-', '-', '-'}; % 线型，可自定义
+colors      = lines(length(all_results)); % 自动生成不同颜色
+
+% 2. 参数设置
+window_size = round(0.1 * mgr.Fs); % 滑动平均窗口大小 (0.1秒)，用于平滑曲线
+mic_ids = keys(mgr.ErrorMicrophones);
+num_mics = length(mic_ids);
+
+% 3. 创建画布
+figure('Name', 'NSE Performance Comparison', 'Color', 'w', 'Position', [100, 100, 1200, 800]);
+
+% 4. 循环绘制每个节点 (麦克风)
+for m = 1:num_mics
+    % 创建子图 (自动计算行列，比如 4个节点就是 2x2)
+    subplot(ceil(num_mics/2), 2, m);
+    hold on; box on; grid on;
+    
+    % 计算该麦克风处的期望信号功率 (分母)
+    % 加上 eps 防止除以 0
+    d_power = movmean(d(:, m).^2, window_size) + eps;
+    
+    % 遍历每个算法
+    for k = 1:length(all_results)
+        % 获取该算法在该麦克风处的误差信号
+        e_curr = all_results{k}.err_hist(:, m);
+        
+        % 计算误差功率 (分子)
+        e_power = movmean(e_curr.^2, window_size) + eps;
+        
+        % 计算 NSE (Normalized Squared Error) in dB
+        % 公式: 10 * log10( E[e^2] / E[d^2] )
+        nse_curve = 10 * log10(e_power ./ d_power);
+        
+        % 绘图
+        plot(time, nse_curve, ...
+            'LineStyle', line_styles{k}, ...
+            'Color', colors(k, :), ...
+            'LineWidth', 1.5, ...
+            'DisplayName', alg_legends{k}); % 用于图例
+    end
+    
+    % 5. 设置子图格式
+    % 标题格式: (a) Node 1, (b) Node 2 ...
+    subplot_idx_char = char(96 + m); % 生成 a, b, c, d...
+    title(sprintf('(%s) Node %d (Mic %d)', subplot_idx_char, m, mic_ids(m)), ...
+          'FontSize', 12, 'FontWeight', 'bold');
+      
+    xlabel('Time (Second)', 'FontSize', 10);
+    ylabel('NSE (dB)', 'FontSize', 10);
+    
+    % 坐标轴范围限制 (根据图片风格调整)
+    xlim([0, duration]);
+    ylim([-25, 5]); % 根据实际效果调整，通常降噪在 -20dB 到 -30dB 左右
+    
+    % 仅在第一个子图中显示图例，避免遮挡
+    if m == 1
+        legend('Location', 'SouthWest', 'FontSize', 8);
+    end
+end
+
+fprintf('绘图完成。\n');
