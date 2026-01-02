@@ -3,7 +3,7 @@ clear; clc;
 %% 用户配置区域
 % 可选选项: "CFxLMS", "ADFxLMS", "ADFxLMS-BC", "Diff-FxLMS", "DCFxLMS", "CDFxLMS", "MGDFxLMS"
 % 例如：只想对比 CFxLMS 和 ADFxLMS，就写 ["CFxLMS", "ADFxLMS"]
-selected_algorithms = ["MGDFxLMS"]; 
+selected_algorithms = [ "CFxLMS", "DCFxLMS", "MGDFxLMS"]; 
 
 fprintf('当前选择运行的算法: %s\n', join(selected_algorithms, ', '));
 
@@ -262,11 +262,25 @@ if ismember("CDFxLMS", selected_algorithms)
     plot_names{end+1} = 'CDFxLMS';
 end
 
-%% MGDFxLMS 算法仿真 还没成功
+%% MGDFxLMS 算法仿真 （是否要考虑步长归一化问题）
 if ismember("MGDFxLMS", selected_algorithms)
+    % 当lc = 32，步长为1e-4时；路径存在巨大偏差，效果居然很好，特别是低频，比集中式还好，不太理解
+    % 而且此时DCFxLMS效果很差，所以原因不在于交叉次级通路很小
+    % 不知道是不是因为步长增大的原因，因为相比CFxLMS，多减了邻居的梯度补偿，相当于步长增大了（这个解释应该不完全对）
+    % 当CFxLMS步长为2e-4时，MGDFxLMS的表现依然不错，信号末段甚至低频依然超过CFxLMS，高频略差
+    % 当lc = 32，步长为5e-5时；效果下降
+    % 当lc = 32，步长为2.5e-5时；效果较差
+    % 当lc = 256，步长为1e-4时；效果很好；与1e-4的集中式几乎一样，比2e-4的集中式差；
+    % 与集中式高度相似，高频部分比32好，但低频部分比32差不少
+    % 当lc = 256，步长为5e-5时；效果较差
+    % 当lc = 256，步长为2.5e-4时；效果更差
+    % 有所猜测，可能当lc更短（当然不能太短），效果可能反而更好，虽然暂时不知道原因
+    % lc = 16 时，效果也很夯
+    % lc = 8 时，发散了
+    % lc = 12 时，效果一般；中频段一部分效果极好，但低高频一般
     % 仿真参数
-    mu_mgd = 1e-4;
-    lc = 32; % 交叉路径补偿滤波器长度
+    mu_mgd = 1e-4; 
+    lc = 16; % 交叉路径补偿滤波器长度
     node1_mgd = algorithms.MGDFxLMS.Node(1, mu_mgd, lc);
     node1_mgd.addRefMic(101); node1_mgd.addSecSpk(201); node1_mgd.addErrMic(301);
     
@@ -289,7 +303,7 @@ if ismember("MGDFxLMS", selected_algorithms)
     
     params_mgd.time            = time;
     params_mgd.rirManager      = mgr;
-    params_mgd.network         = net_mgd; % 使用与 CDFxLMS 相同的网络拓扑
+    params_mgd.network         = net_mgd;
     params_mgd.L               = 1024;
     params_mgd.referenceSignal = x;
     params_mgd.desiredSignal   = d;

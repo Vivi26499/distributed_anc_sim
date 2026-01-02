@@ -57,7 +57,7 @@ for keyNode = keys(network.Nodes)'
     node.init(L);
 end
 
-fprintf('预计算交叉路径补偿滤波器 (ckm)...');
+fprintf('预计算交叉路径补偿滤波器 (ckm)...\n');
 for keyNode = keys(network.Nodes)'
     node = network.Nodes(keyNode);
     for neighborId = node.NeighborIds
@@ -65,11 +65,12 @@ for keyNode = keys(network.Nodes)'
             continue
         end
         neighbor = network.Nodes(neighborId);
-        
+
+        % 2.1 计算ckm 可能能优化
         % 获取 RIR 并强制转换为列向量 (:)
         S_hat_km = rirManager.getSecondaryRIR(node.SecSpkId, neighbor.ErrMicId);
-        S_hat_km = S_hat_km(:); 
-        
+        S_hat_km = S_hat_km(:);
+
         S_hat_mm = rirManager.getSecondaryRIR(neighbor.SecSpkId, neighbor.ErrMicId);
         S_hat_mm = S_hat_mm(:);
 
@@ -78,26 +79,39 @@ for keyNode = keys(network.Nodes)'
 
         expected_len = size(M, 1);
         current_len = length(S_hat_km);
-        
+
         % 构造目标向量 b (列向量)
         if current_len < expected_len
             % 补零
             b = [S_hat_km; zeros(expected_len - current_len, 1)];
         elseif current_len > expected_len
-            % 截断
+            % 截断 不应该发生
             b = S_hat_km(1:expected_len);
+            fprintf("Warning: Truncating S_hat_km from length %d to %d for node %d -> neighbor %d\n", ...
+                current_len, expected_len, node.Id, neighborId);
         else
             b = S_hat_km;
         end
-         % 最小二乘求解
-        cmk = M \ b; 
-        node.ckm_taps(neighborId) = {cmk};
+        % 最小二乘求解
+        ckm = M \ b;
+        % fprintf('Node %d -> Neighbor %d: ckm norm = %.4f, max = %.4f\n', ...
+        %        node.Id, neighborId, norm(ckm), max(abs(ckm)));
+        node.ckm_taps(neighborId) = {ckm};
+
+        % 2.2 验证ckm近似质量
+        % 计算近似值
+        S_km_approx = conv(S_hat_mm, ckm);
+        S_km_approx = S_km_approx(1:length(S_hat_km));
+
+        % 计算误差
+        err = norm(S_km_approx - S_hat_km) / norm(S_hat_km);
+        fprintf('Node %d -> Neighbor %d: 相对误差 = %.4f (%.1f%%)\n', ...
+            node.Id, neighborId, err, err*100);
     end
 end
-% ------------------------------------------------
 
 %% 3. 主循环
-disp('开始MGDFxLMS仿真... \n');
+fprintf('开始MGDFxLMS仿真... \n');
 for n = 1:nSamples
     % 3.1. 更新参考信号状态向量 (全局)
     x_taps = [x(n, :); x_taps(1:end-1, :)];
@@ -120,7 +134,7 @@ for n = 1:nSamples
         e(n, m) = d(n, m) + yf;
     end
 
-    % 3.4. 更新节点信息 (分布式)  
+    % 3.4. 更新节点信息 (分布式)
     % 3.4.1 计算xf、梯度
     for keyNode = keys(network.Nodes)'
         node = network.Nodes(keyNode);
@@ -139,11 +153,19 @@ for n = 1:nSamples
                 continue;
             end
             neighbor = network.Nodes(neighborId);
-            
+
             ckm_cell = node.ckm_taps(neighbor.Id);
             ckm_vec = ckm_cell{1};
-            full_conv = conv(ckm_vec, neighbor.gradient);
-            node.direction = node.direction + full_conv(1:L);
+
+            ckm_flipped = flipud(ckm_vec);
+            full_conv = conv(neighbor.gradient, ckm_flipped);
+            % 截断（取“有效”部分）
+            % 注意：由于翻转了，有效数据的起始点变了
+            valid_start = node.Lc;
+            % 提取正确的部分 (长度为 N)
+            correction = full_conv(valid_start : valid_start + L - 1);
+            
+            node.direction = node.direction + correction;
         end
     end
     % 3.4.3 更新W
